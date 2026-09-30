@@ -6,7 +6,9 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const today=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const TABS=['topics','papers','memos','hot','contests','jobs','guest'];
-let state={}, guest=[], owner=false, pw='', selectedPaper=null, guestTimer=null, dirty=false;
+let state={}, guest=[], owner=false, pw='', selectedPaper=null, guestTimer=null, dirty=false, editingGuest=null;
+let myTokens={};try{myTokens=JSON.parse(localStorage.getItem('gtokens')||'{}')}catch(e){}
+function saveTokens(){try{localStorage.setItem('gtokens',JSON.stringify(myTokens))}catch(e){}}
 
 function normalize(){
   ['topics','papers','memos','hot','contests','jobs'].forEach(k=>{if(!Array.isArray(state[k]))state[k]=[]});
@@ -150,9 +152,10 @@ function renderJobs(){
 function fmtDate(d){const t=new Date(d);return isNaN(t)?String(d||'').slice(0,10):t.toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\s/g,'').replace(/\.$/,'')}
 function renderGuest(){
   const el=$('[data-render="guest"]');
-  const list=guest.length?guest.map(g=>`
-    <div class="guest" id="g-${esc(g.id)}"><b>${esc(g.nick)}</b> <span class="meta">${esc(fmtDate(g.date))}</span><p>${esc(g.text)}</p>
-      ${owner?`<div class="tools"><button class="btn ghost sm danger" data-hideguest="${esc(g.id)}">삭제</button></div>`:''}</div>`).join('')
+  const list=guest.length?guest.map(g=>{const mine=!!myTokens[g.id];
+    if(editingGuest===g.id&&mine)return `<form class="guest" id="g-${esc(g.id)}" data-geditform="${esc(g.id)}"><div class="row"><input data-genick value="${esc(g.nick)}" maxlength="30" required style="flex:0 1 180px"></div><textarea data-getext maxlength="1000" required>${esc(g.text)}</textarea><div class="row" style="margin-top:6px"><button class="btn sm" type="submit">저장</button><button class="btn ghost sm" type="button" data-gcancel="1">취소</button></div></form>`;
+    return `<div class="guest" id="g-${esc(g.id)}"><b>${esc(g.nick)}</b> <span class="meta">${esc(fmtDate(g.date))}</span>${mine?' <span class="pill mint" style="font-size:10.5px">내 글</span>':''}<p>${esc(g.text)}</p>
+      ${mine?`<div class="tools"><button class="btn ghost sm" data-gedit="${esc(g.id)}">수정</button><button class="btn ghost sm danger" data-gdel="${esc(g.id)}">삭제</button></div>`:owner?`<div class="tools"><button class="btn ghost sm danger" data-hideguest="${esc(g.id)}">삭제</button></div>`:''}</div>`}).join('')
     :`<div class="empty">첫 방명록을 기다리고 있어요.</div>`;
   el.innerHTML=`<h2>방명록</h2>
     <form class="gform" id="guestLive" autocomplete="off">
@@ -218,8 +221,12 @@ document.addEventListener('submit',async e=>{
   if(f.id==='guestLive'){const nick=$('#glNick').value.trim(),text=$('#glText').value.trim(),hp=$('#glHp').value;const msg=$('#glMsg');const btn=f.querySelector('button');
     if(!nick||!text)return;btn.disabled=true;msg.textContent='남기는 중…';
     try{const r=await apiPost({a:'guest',nick,text,hp});if(!r.ok)throw new Error(r.error||'실패');$('#glText').value='';try{localStorage.setItem('nick',nick)}catch(_){}
+      if(r.token&&r.item){myTokens[r.item.id]=r.token;saveTokens()}
       guest.unshift(r.item);renderGuest();$('#glMsg').textContent='고마워요! 남겨졌어요 ♡';setTimeout(loadGuest,800);}
     catch(err){msg.textContent='저장에 실패했어요: '+err.message}finally{btn.disabled=false}return}
+  if(f.dataset.geditform){const id=f.dataset.geditform;const nick=f.querySelector('[data-genick]').value.trim(),text=f.querySelector('[data-getext]').value.trim();
+    try{const r=await apiPost({a:'guestEdit',id,token:myTokens[id],nick,text});if(!r.ok)throw new Error(r.error||'실패');const g=guest.find(x=>x.id===id);if(g){g.nick=nick;g.text=text}editingGuest=null;renderGuest();status('수정했어요 ♡')}
+    catch(err){status('수정 실패: '+err.message)}return}
   if(!owner)return;
   if(f.dataset.fbform){const t=state.topics.find(x=>x.id===f.dataset.fbform);
     t.feedback.push({id:uid(),who:f.querySelector('[data-fbwho]').value.trim(),text:f.querySelector('[data-fbtext]').value.trim(),date:f.querySelector('[data-fbdate]').value.trim()||today()});t.updated=today();return save()}
@@ -239,6 +246,10 @@ document.addEventListener('click',async e=>{
   if(b.id==='login')return login();
   if(b.id==='pwCancel'){$('#pwForm').hidden=true;return}
   if(b.id==='logout')return logout();
+  if(b.dataset.gedit){editingGuest=b.dataset.gedit;renderGuest();return}
+  if(b.dataset.gcancel){editingGuest=null;renderGuest();return}
+  if(b.dataset.gdel){const id=b.dataset.gdel;if(!b.dataset.armed){b.dataset.armed='1';b.textContent='정말 삭제?';return}
+    try{const r=await apiPost({a:'guestDel',id,token:myTokens[id]});if(!r.ok)throw new Error(r.error||'실패');guest=guest.filter(g=>g.id!==id);delete myTokens[id];saveTokens();renderGuest();status('지웠어요')}catch(err){status('삭제 실패: '+err.message)}return}
   if(!owner)return;
   const d=b.dataset;
   if(d.hideguest){if(!d.armed){d.armed='1';b.textContent='정말?';return}
@@ -263,6 +274,20 @@ document.addEventListener('click',async e=>{
   if(b.id==='paperCancel'){selectedPaper=null;renderPapers();return}
   if(/Cancel$/.test(b.id)){renderAll()}
 });
+
+/* ---------- 인트로 (사진 → 종이비행기) ---------- */
+function runIntro(){
+  const o=$('#intro');if(!o)return;
+  let seen=false;try{seen=sessionStorage.getItem('introSeen')==='1'}catch(e){}
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(seen||reduce){o.remove();return}
+  const end=()=>{o.classList.add('out');setTimeout(()=>o.remove(),700);try{sessionStorage.setItem('introSeen','1')}catch(e){}};
+  o.addEventListener('click',end);
+  const img=$('#introPhoto');
+  const go=()=>{o.classList.add('play');setTimeout(end,4300)};
+  if(img.complete)go();else{img.onload=go;img.onerror=()=>{img.remove();o.classList.add('nophoto');go()}}
+}
+runIntro();
 
 /* ---------- 시작 ---------- */
 (async()=>{

@@ -136,9 +136,43 @@ html,body{margin:0}
 .pwbox input{width:auto;flex:1 1 160px}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 #loadMsg{color:var(--muted);font-family:var(--hand);font-size:18px;text-align:center;padding:30px}
+
+/* ---- 인트로 ---- */
+#intro{position:fixed;inset:0;z-index:50;background:var(--bg);display:grid;place-items:center;cursor:pointer;transition:opacity .7s;overflow:hidden}
+#intro.out{opacity:0;pointer-events:none}
+#intro .skip{position:absolute;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0px));font-size:12.5px;color:var(--muted);font-family:var(--hand);font-size:16px}
+#intro .stage{position:relative;width:min(300px,70vw);aspect-ratio:3/4;perspective:1000px}
+#intro .photo{position:absolute;inset:0;border-radius:14px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.15);background:var(--paper);border:6px solid #fff;transform-style:preserve-3d;transform-origin:50% 50%}
+#intro .photo img{width:100%;height:100%;object-fit:cover;display:block}
+#intro .cap{position:absolute;left:0;right:0;bottom:-46px;text-align:center;font-family:var(--hand);font-size:20px;color:var(--muted);white-space:nowrap}
+#intro .plane{position:absolute;left:50%;top:50%;width:150px;height:150px;margin:-75px 0 0 -75px;opacity:0;transform:rotate(-15deg) scale(.6)}
+#intro .trail{position:absolute;left:50%;top:50%;width:2px;height:2px;border-radius:50%;background:var(--pink);opacity:0}
+#intro.play .photo{animation:foldAway 2.2s cubic-bezier(.6,.05,.4,1) .9s forwards}
+#intro.play .cap{animation:capFade .8s ease 1.4s forwards}
+#intro.play .plane{animation:planeIn .5s ease 2.7s forwards, planeFly 1.4s cubic-bezier(.4,0,.8,.4) 3s forwards}
+#intro.play .trail{animation:trail 1.4s ease 3.05s forwards}
+#intro.nophoto .photo{display:grid;place-items:center;font-family:var(--display);font-size:22px;color:var(--pink)}
+@keyframes foldAway{0%{transform:rotateY(0) rotateX(0) scale(1)}35%{transform:rotateY(-70deg) rotateX(8deg) scale(.95)}60%{transform:rotateY(-70deg) rotateX(60deg) scale(.7);border-radius:6px}85%{transform:rotateY(-90deg) rotateX(88deg) scale(.35);opacity:1}100%{transform:rotateY(-90deg) rotateX(90deg) scale(.2);opacity:0}}
+@keyframes capFade{to{opacity:0}}
+@keyframes planeIn{from{opacity:0;transform:rotate(-15deg) scale(.6)}to{opacity:1;transform:rotate(-15deg) scale(1)}}
+@keyframes planeFly{0%{transform:translate(0,0) rotate(-15deg) scale(1)}30%{transform:translate(18vw,-6vh) rotate(-22deg) scale(.95)}100%{transform:translate(70vw,-60vh) rotate(-35deg) scale(.4);opacity:0}}
+@keyframes trail{0%{opacity:.7;box-shadow:0 0 0 0 var(--pink)}100%{opacity:0;transform:translate(60vw,-50vh);box-shadow:-40px 30px 0 -1px var(--pink),-90px 60px 0 -1px var(--line),-140px 95px 0 -1px var(--line)}}
 </style>
 </head>
 <body>
+<div id="intro" role="button" aria-label="인트로 건너뛰기">
+  <div class="stage">
+    <div class="photo"><img id="introPhoto" src="photo.jpg" alt=""></div>
+    <div class="cap">이지현의 논문일지 ✈</div>
+    <svg class="plane" viewBox="0 0 120 120" aria-hidden="true">
+      <path d="M8 62 L112 18 L74 104 L60 70 Z" fill="#fff" stroke="#ff9fbf" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M8 62 L60 70 L112 18 Z" fill="#ffe3ec" stroke="#ff9fbf" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M60 70 L74 104" stroke="#ff9fbf" stroke-width="3"/>
+    </svg>
+    <div class="trail"></div>
+  </div>
+  <div class="skip">아무 곳이나 누르면 건너뛰기</div>
+</div>
 <div class="wrap">
 <header>
   <svg class="mascot" viewBox="0 0 64 64" aria-hidden="true">
