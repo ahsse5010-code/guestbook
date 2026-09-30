@@ -10,6 +10,7 @@ const PRIVATE_TABS=['schedule','topics','memos'];
 const TABS=[...PUBLIC_TABS,...PRIVATE_TABS];
 const DOW=['일','월','화','수','목','금','토'];
 let state={}, guest=[], owner=false, pw='', selectedPaper=null, guestTimer=null, dirty=false, editingGuest=null;
+let replyTo=null;
 let myTokens={};try{myTokens=JSON.parse(localStorage.getItem('gtokens')||'{}')}catch(e){}
 function saveTokens(){try{localStorage.setItem('gtokens',JSON.stringify(myTokens))}catch(e){}}
 
@@ -164,10 +165,15 @@ function renderJobs(){
 function fmtDate(d){const t=new Date(d);return isNaN(t)?String(d||'').slice(0,10):t.toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\s/g,'').replace(/\.$/,'')}
 function renderGuest(){
   const el=$('[data-render="guest"]');
-  const list=guest.length?guest.map(g=>{const mine=!!myTokens[g.id];
-    if(editingGuest===g.id&&mine)return `<form class="guest" id="g-${esc(g.id)}" data-geditform="${esc(g.id)}"><div class="row"><input data-genick value="${esc(g.nick)}" maxlength="30" required style="flex:0 1 180px"></div><textarea data-getext maxlength="1000" required>${esc(g.text)}</textarea><div class="row" style="margin-top:6px"><button class="btn sm" type="submit">저장</button><button class="btn ghost sm" type="button" data-gcancel="1">취소</button></div></form>`;
-    return `<div class="guest" id="g-${esc(g.id)}"><b>${esc(g.nick)}</b> <span class="meta">${esc(fmtDate(g.date))}</span>${mine?' <span class="pill mint" style="font-size:10.5px">내 글</span>':''}<p>${esc(g.text)}</p>
-      ${mine?`<div class="tools"><button class="btn ghost sm" data-gedit="${esc(g.id)}">수정</button><button class="btn ghost sm danger" data-gdel="${esc(g.id)}">삭제</button></div>`:owner?`<div class="tools"><button class="btn ghost sm danger" data-hideguest="${esc(g.id)}">삭제</button></div>`:''}</div>`}).join('')
+  const tops=guest.filter(g=>!g.parent);const kids=id=>guest.filter(g=>g.parent===id).slice().reverse();
+  const one=(g,isReply)=>{const mine=!!myTokens[g.id];
+    if(editingGuest===g.id&&mine)return `<form class="guest ${isReply?'reply':''}" id="g-${esc(g.id)}" data-geditform="${esc(g.id)}"><div class="row"><input data-genick value="${esc(g.nick)}" maxlength="30" required style="flex:0 1 180px"></div><textarea data-getext maxlength="1000" required>${esc(g.text)}</textarea><div class="row" style="margin-top:6px"><button class="btn sm" type="submit">저장</button><button class="btn ghost sm" type="button" data-gcancel="1">취소</button></div></form>`;
+    const acts=[];if(!isReply)acts.push(`<button class="btn ghost sm" data-greply="${esc(g.id)}">답글</button>`);
+    if(mine)acts.push(`<button class="btn ghost sm" data-gedit="${esc(g.id)}">수정</button><button class="btn ghost sm danger" data-gdel="${esc(g.id)}">삭제</button>`);else if(owner)acts.push(`<button class="btn ghost sm danger" data-hideguest="${esc(g.id)}">삭제</button>`);
+    const replyForm=(!isReply&&replyTo===g.id)?`<form class="gform reply-form" data-greplyform="${esc(g.id)}"><div class="row"><input data-rnick placeholder="닉네임" maxlength="30" required value="${esc(owner?'지현':(()=>{try{return localStorage.getItem('nick')||''}catch(e){return ''}})())}" style="flex:0 1 160px"></div><textarea data-rtext placeholder="답글…" maxlength="1000" required></textarea><div class="row"><button class="btn sm" type="submit">답글 달기</button><button class="btn ghost sm" type="button" data-grcancel="1">취소</button><span class="meta" data-rmsg></span></div></form>`:'';
+    return `<div class="guest ${isReply?'reply':''}" id="g-${esc(g.id)}"><b>${esc(g.nick)}</b>${g.byOwner?' <span class="pill" style="font-size:10.5px">주인장</span>':''} <span class="meta">${esc(fmtDate(g.date))}</span>${mine?' <span class="pill mint" style="font-size:10.5px">내 글</span>':''}<p>${esc(g.text)}</p>
+      ${acts.length?`<div class="tools">${acts.join('')}</div>`:''}${replyForm}${isReply?'':kids(g.id).map(k=>one(k,true)).join('')}</div>`};
+  const list=tops.length?tops.map(g=>one(g,false)).join('')
     :`<div class="empty">첫 방명록을 기다리고 있어요.</div>`;
   el.innerHTML=`<h2>방명록</h2>
     <form class="gform" id="guestLive" autocomplete="off">
@@ -177,7 +183,7 @@ function renderGuest(){
       <input class="hp" id="glHp" name="website" tabindex="-1" autocomplete="off">
       <div class="row"><button class="btn" type="submit">남기기</button><span class="meta" id="glMsg"></span></div>
     </form>
-    <p class="count meta" id="gCount">방명록 ${guest.length}개 · 실시간</p>${list}`;
+    <p class="count meta" id="gCount">방명록 ${tops.length}개 · 실시간</p>${list}`;
   try{const n=localStorage.getItem('nick');if(n&&$('#glNick'))$('#glNick').value=n}catch(e){}
 }
 /* ---------- 일기장 ---------- */
@@ -277,10 +283,13 @@ document.addEventListener('submit',async e=>{
   if(f.id==='pwForm')return tryLogin();
   if(f.id==='guestLive'){const nick=$('#glNick').value.trim(),text=$('#glText').value.trim(),hp=$('#glHp').value;const msg=$('#glMsg');const btn=f.querySelector('button');
     if(!nick||!text)return;btn.disabled=true;msg.textContent='남기는 중…';
-    try{const r=await apiPost({a:'guest',nick,text,hp});if(!r.ok)throw new Error(r.error||'실패');$('#glText').value='';try{localStorage.setItem('nick',nick)}catch(_){}
+    try{const gb={a:'guest',nick,text,hp};if(owner)gb.pw=pw;const r=await apiPost(gb);if(!r.ok)throw new Error(r.error||'실패');$('#glText').value='';try{localStorage.setItem('nick',nick)}catch(_){}
       if(r.token&&r.item){myTokens[r.item.id]=r.token;saveTokens()}
       guest.unshift(r.item);renderGuest();$('#glMsg').textContent='고마워요! 남겨졌어요 ♡';setTimeout(loadGuest,800);}
     catch(err){msg.textContent='저장에 실패했어요: '+err.message}finally{btn.disabled=false}return}
+  if(f.dataset.greplyform){const parent=f.dataset.greplyform;const nick=f.querySelector('[data-rnick]').value.trim(),text=f.querySelector('[data-rtext]').value.trim();const msg=f.querySelector('[data-rmsg]');msg.textContent='다는 중…';
+    try{const body={a:'guest',nick,text,parent};if(owner)body.pw=pw;const r=await apiPost(body);if(!r.ok)throw new Error(r.error||'실패');if(r.token&&r.item){myTokens[r.item.id]=r.token;saveTokens()}try{localStorage.setItem('nick',nick)}catch(_){}
+      replyTo=null;guest.unshift(r.item);renderGuest();setTimeout(loadGuest,800)}catch(err){msg.textContent='실패: '+err.message}return}
   if(f.dataset.geditform){const id=f.dataset.geditform;const nick=f.querySelector('[data-genick]').value.trim(),text=f.querySelector('[data-getext]').value.trim();
     try{const r=await apiPost({a:'guestEdit',id,token:myTokens[id],nick,text});if(!r.ok)throw new Error(r.error||'실패');const g=guest.find(x=>x.id===id);if(g){g.nick=nick;g.text=text}editingGuest=null;renderGuest();status('수정했어요 ♡')}
     catch(err){status('수정 실패: '+err.message)}return}
@@ -308,6 +317,8 @@ document.addEventListener('click',async e=>{
   if(b.id==='login')return login();
   if(b.id==='pwCancel'){$('#pwForm').hidden=true;return}
   if(b.id==='logout')return logout();
+  if(b.dataset.greply){replyTo=(replyTo===b.dataset.greply)?null:b.dataset.greply;renderGuest();const ta=document.querySelector('[data-rtext]');if(ta)ta.focus();return}
+  if(b.dataset.grcancel){replyTo=null;renderGuest();return}
   if(b.dataset.gedit){editingGuest=b.dataset.gedit;renderGuest();return}
   if(b.dataset.gcancel){editingGuest=null;renderGuest();return}
   if(b.dataset.gdel){const id=b.dataset.gdel;if(!b.dataset.armed){b.dataset.armed='1';b.textContent='정말 삭제?';return}
