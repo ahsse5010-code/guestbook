@@ -5,13 +5,17 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-const TABS=['topics','papers','memos','hot','contests','jobs','guest'];
+const PUBLIC_TABS=['cv','papers','hot','contests','jobs','guest','diary'];
+const PRIVATE_TABS=['schedule','topics','memos'];
+const TABS=[...PUBLIC_TABS,...PRIVATE_TABS];
+const DOW=['일','월','화','수','목','금','토'];
 let state={}, guest=[], owner=false, pw='', selectedPaper=null, guestTimer=null, dirty=false, editingGuest=null;
 let myTokens={};try{myTokens=JSON.parse(localStorage.getItem('gtokens')||'{}')}catch(e){}
 function saveTokens(){try{localStorage.setItem('gtokens',JSON.stringify(myTokens))}catch(e){}}
 
 function normalize(){
-  ['topics','papers','memos','hot','contests','jobs'].forEach(k=>{if(!Array.isArray(state[k]))state[k]=[]});
+  ['topics','papers','memos','hot','contests','jobs','diary'].forEach(k=>{if(!Array.isArray(state[k]))state[k]=[]});
+  if(!state.schedule||typeof state.schedule!=='object')state.schedule={};
   state.topics.forEach(t=>{if(!Array.isArray(t.feedback))t.feedback=[];if(typeof t.stars!=='number')t.stars=0});
   state.hot.forEach(h=>{if(!Array.isArray(h.notes))h.notes=[]});
   if(!state.gradDate)state.gradDate='2028-08-20';
@@ -23,13 +27,21 @@ async function apiPost(body){const r=await fetch(API_URL,{method:'POST',body:JSO
 
 /* ---------- 탭 ---------- */
 const tabs=$('#tabs');
+let currentTab='home';
 function showTab(name){
+  if(PRIVATE_TABS.includes(name)&&!owner)name='home';
+  currentTab=name;
   tabs.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===name));
   TABS.forEach(t=>{$('#tab-'+t).hidden=(t!==name)});
-  try{localStorage.setItem('tab',name)}catch(e){}
+  $('#home').hidden=(name!=='home');
   if(name==='guest')startGuestPoll();else stopGuestPoll();
+  if(name==='home')renderHome();
+}
+function renderTabs(){
+  tabs.querySelectorAll('button').forEach(b=>{b.hidden=PRIVATE_TABS.includes(b.dataset.tab)&&!owner});
 }
 tabs.addEventListener('click',e=>{const b=e.target.closest('button');if(b)showTab(b.dataset.tab)});
+$('#homeLink').addEventListener('click',e=>{e.preventDefault();showTab('home')});
 
 /* ---------- D-day ---------- */
 function renderDday(){const g=new Date((state.gradDate||'2028-08-20')+'T00:00:00');const now=new Date();now.setHours(0,0,0,0);
@@ -168,7 +180,51 @@ function renderGuest(){
     <p class="count meta" id="gCount">방명록 ${guest.length}개 · 실시간</p>${list}`;
   try{const n=localStorage.getItem('nick');if(n&&$('#glNick'))$('#glNick').value=n}catch(e){}
 }
-function renderAll(){renderDday();renderTopics();renderPapers();renderMemos();renderHot();renderContests();renderJobs();renderGuest();renderOwnerBar()}
+/* ---------- 일기장 ---------- */
+function renderHome(){
+  const el=$('#home');
+  const d=state.diary[0];
+  el.innerHTML=d?`<article class="diary home"><h2 class="dtitle">${esc(d.title||'')}</h2><p class="dbody">${esc(d.text)}</p><p class="meta" style="text-align:right"><a href="#" data-gotab="diary">일기장 더 보기 →</a></p></article>`
+    :`<div class="empty">첫 일기를 기다리고 있어요 ✎</div>`;
+}
+function renderDiary(){
+  const el=$('[data-render="diary"]');
+  const list=state.diary.length?state.diary.map(d=>`
+    <article class="diary" id="d-${d.id}"><div class="row" style="justify-content:space-between"><h3 class="dtitle" style="margin:0">${esc(d.title||'')}</h3><span class="meta">${esc(d.date)}</span></div><p class="dbody">${esc(d.text)}</p>${tools('diary',d.id)}</article>`).join('')
+    :`<div class="empty">첫 일기를 기다리고 있어요 ✎</div>`;
+  el.innerHTML=`<h2>일기장</h2>${list}`+ownerForm(`
+    <h4 id="diaryFormTitle">일기 쓰기</h4>
+    <form id="diaryForm"><input type="hidden" id="diaryId"><input id="diaryTitle" placeholder="제목 (선택)"><textarea id="diaryText" style="min-height:160px" placeholder="오늘의 이야기…" required></textarea>
+    <div class="row"><label class="meta" for="diaryDate">날짜</label><input type="date" id="diaryDate" value="${today()}" style="width:auto"></div>
+    <div class="row"><button class="btn" type="submit">저장</button><button class="btn ghost" type="button" id="diaryCancel">취소</button></div></form>`);
+}
+/* ---------- CV ---------- */
+async function renderCV(){
+  const el=$('[data-render="cv"]');
+  const url=state.cvUrl||'cv.pdf';
+  el.innerHTML=`<h2>CV</h2><p class="meta" id="cvMsg">불러오는 중…</p>`;
+  let ok=false;try{const r=await fetch(url,{method:'HEAD',cache:'no-store'});ok=r.ok}catch(e){}
+  el.innerHTML=`<h2>CV</h2>`+(ok?`<p class="meta" style="margin:-6px 0 10px"><a href="${esc(url)}" target="_blank" rel="noopener">새 창에서 열기 / 내려받기 ↗</a>${state.cvUpdated?' · 갱신 '+esc(state.cvUpdated):''}</p><iframe class="cvframe" src="${esc(url)}#view=FitH" title="CV"></iframe>`
+    :`<div class="empty">CV를 준비하고 있어요 📄</div>`);
+}
+/* ---------- 일정표 (주간) ---------- */
+let weekOffset=0, schedTimer=null;
+function mondayOf(d){const x=new Date(d);x.setHours(0,0,0,0);const dow=(x.getDay()+6)%7;x.setDate(x.getDate()-dow);return x}
+function ymd(d){return new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)}
+function renderSchedule(){
+  const el=$('[data-render="schedule"]');if(!owner){el.innerHTML='';return}
+  const base=mondayOf(new Date());base.setDate(base.getDate()+weekOffset*7);
+  const t=today();
+  const days=[...Array(7)].map((_,i)=>{const d=new Date(base);d.setDate(base.getDate()+i);return d});
+  const cell=(d,half)=>{const k=ymd(d);const dow=d.getDay();const isT=k===t;
+    return `<div class="day ${half?'half':''} ${isT?'today':''} ${dow===0?'sun':dow===6?'sat':''}"><div class="dh"><b>${DOW[dow]}</b><span>${d.getMonth()+1}/${d.getDate()}</span></div><textarea data-sched="${k}" placeholder="—">${esc(state.schedule[k]||'')}</textarea></div>`};
+  const end=new Date(base);end.setDate(base.getDate()+6);
+  el.innerHTML=`<h2>일정표</h2>
+    <div class="row" style="justify-content:space-between;margin-bottom:10px"><button class="btn ghost sm" id="wPrev" type="button">‹ 지난주</button><b style="font-family:var(--display);font-weight:400;font-size:17px">${base.getFullYear()}.${base.getMonth()+1}.${base.getDate()} ~ ${end.getMonth()+1}.${end.getDate()}${weekOffset===0?' <span class="pill" style="margin-left:6px">이번 주</span>':''}</b><div class="row"><button class="btn ghost sm" id="wToday" type="button">오늘</button><button class="btn ghost sm" id="wNext" type="button">다음주 ›</button></div></div>
+    <div class="week">${days.slice(0,5).map(d=>cell(d,false)).join('')}<div class="weekend">${cell(days[5],true)}${cell(days[6],true)}</div></div>
+    <p class="meta" id="schedMsg" style="margin-top:8px">칸에 쓰면 자동으로 저장돼요.</p>`;
+}
+function renderAll(){renderDday();renderTabs();renderCV();renderPapers();renderHot();renderContests();renderJobs();renderGuest();renderDiary();renderSchedule();renderTopics();renderMemos();renderOwnerBar();if(currentTab==='home')renderHome()}
 
 /* ---------- 주인 모드 ---------- */
 function renderOwnerBar(){
@@ -183,7 +239,7 @@ async function tryLogin(){
   const v=$('#pwInput').value.trim();if(!v)return;
   $('#pwMsg').textContent='확인 중…';
   try{const r=await apiPost({a:'check',pw:v});
-    if(r.ok&&r.auth){pw=v;owner=true;try{localStorage.setItem('pw',v)}catch(e){}$('#pwForm').hidden=true;$('#pwInput').value='';renderAll();
+    if(r.ok&&r.auth){pw=v;owner=true;try{localStorage.setItem('pw',v)}catch(e){}$('#pwForm').hidden=true;$('#pwInput').value='';await loadFull();renderAll();
       if(!Object.keys(state).some(k=>Array.isArray(state[k])&&state[k].length)&&window.SEED){ if(await seedIfEmpty()) return; }
     } else $('#pwMsg').textContent='비밀번호가 맞지 않아요.';
   }catch(e){$('#pwMsg').textContent='확인 실패: '+e.message}
@@ -194,7 +250,8 @@ async function seedIfEmpty(){
   const r=await apiPost({a:'save',pw,state});
   status(r.ok?'초기 데이터 저장 완료!':'초기 데이터 저장 실패: '+r.error);renderAll();return r.ok;
 }
-function logout(){owner=false;pw='';try{localStorage.removeItem('pw')}catch(e){}renderAll()}
+async function loadFull(){try{const r=await apiPost({a:'full',pw});if(r.ok&&r.state){state=r.state;normalize()}}catch(e){}}
+function logout(){owner=false;pw='';try{localStorage.removeItem('pw')}catch(e){}['topics','memos'].forEach(k=>state[k]=[]);state.schedule={};if(PRIVATE_TABS.includes(currentTab))currentTab='home';renderAll();showTab(currentTab)}
 
 function status(msg){let s=$('#status');if(!s){s=document.createElement('div');s.id='status';document.body.appendChild(s)}s.textContent=msg;clearTimeout(status.t);status.t=setTimeout(()=>{s.remove()},4000)}
 async function save(){
@@ -238,10 +295,15 @@ document.addEventListener('submit',async e=>{
     const i=state.papers.findIndex(x=>x.id===id);if(i>=0)state.papers[i]=p;else state.papers.unshift(p);selectedPaper=null}
   if(f.id==='memoForm'){const id=$('#memoId').value;const i=state.memos.findIndex(x=>x.id===id);const date=$('#memoDate').value||today();
     if(i>=0){state.memos[i].text=$('#memoText').value.trim();state.memos[i].date=date}else state.memos.unshift({id:uid(),text:$('#memoText').value.trim(),date})}
+  if(f.id==='diaryForm'){const id=$('#diaryId').value;const rec={title:$('#diaryTitle').value.trim(),text:$('#diaryText').value.trim(),date:$('#diaryDate').value||today()};
+    const i=state.diary.findIndex(x=>x.id===id);if(i>=0)Object.assign(state.diary[i],rec);else state.diary.unshift({id:uid(),...rec});
+    state.diary.sort((x,y)=>(y.date||'').localeCompare(x.date||''))}
   if(f.id==='contestForm'){state.contests.unshift({added:today(),deadline:$('#ctDeadline').value,status:$('#ctStatus').value,title:$('#ctTitle').value.trim(),host:$('#ctHost').value.trim(),target:$('#ctTarget').value.trim(),prize:$('#ctPrize').value.trim(),when:$('#ctWhen').value.trim(),note:$('#ctNote').value.trim(),link:$('#ctLink').value.trim()})}
   await save();
 });
 document.addEventListener('click',async e=>{
+  const pick=e.target.closest('[data-pick]');
+  if(pick&&owner){selectedPaper=(selectedPaper===pick.dataset.pick)?null:pick.dataset.pick;renderPapers();if(selectedPaper)$('#paperForm').scrollIntoView({behavior:'smooth',block:'center'});return}
   const b=e.target.closest('button');if(!b)return;
   if(b.id==='login')return login();
   if(b.id==='pwCancel'){$('#pwForm').hidden=true;return}
@@ -254,7 +316,6 @@ document.addEventListener('click',async e=>{
   const d=b.dataset;
   if(d.hideguest){if(!d.armed){d.armed='1';b.textContent='정말?';return}
     try{const r=await apiPost({a:'hide',pw,id:d.hideguest});if(r.ok){guest=guest.filter(g=>g.id!==d.hideguest);renderGuest();status('숨겼어요')}else status('실패: '+r.error)}catch(err){status('실패')}return}
-  if(d.pick){selectedPaper=(selectedPaper===d.pick)?null:d.pick;renderPapers();if(selectedPaper)$('#paperForm').scrollIntoView({behavior:'smooth',block:'center'});return}
   if(d.addfb){const f=document.querySelector(`[data-fbform="${d.addfb}"]`);f.hidden=false;b.hidden=true;f.querySelector('[data-fbwho]').focus();return}
   if(d.fbcancel){const f=document.querySelector(`[data-fbform="${d.fbcancel}"]`);f.hidden=true;document.querySelector(`[data-addfb="${d.fbcancel}"]`).hidden=false;return}
   if(d.delfb){const [tid,fid]=d.delfb.split(':');if(!d.armed){d.armed='1';b.textContent='정말?';return}
@@ -265,15 +326,24 @@ document.addEventListener('click',async e=>{
   if(d.delhot){if(!d.armed){d.armed='1';b.textContent='정말?';return}state.hot.splice(+d.delhot,1);return save()}
   if(d.deljob){if(!d.armed){d.armed='1';b.textContent='정말?';return}state.jobs.splice(+d.deljob,1);return save()}
   if(d.del){const [k,id]=d.del.split(':');
-    if(d.armed){const key={topic:'topics',paper:'papers',memo:'memos'}[k];state[key]=state[key].filter(x=>x.id!==id);selectedPaper=null;save()}
+    if(d.armed){const key={topic:'topics',paper:'papers',memo:'memos',diary:'diary'}[k];state[key]=state[key].filter(x=>x.id!==id);selectedPaper=null;save()}
     else{d.armed='1';b.textContent='정말 삭제?'}return}
   if(d.edit){const [k,id]=d.edit.split(':');
     if(k==='topic'){const t=state.topics.find(x=>x.id===id);$('#topicId').value=id;$('#topicTopic').value=t.topic;$('#topicData').value=t.data;$('#topicVars').value=t.vars;$('#topicFormTitle').textContent='논문주제 수정';$('#topicForm').scrollIntoView({behavior:'smooth'})}
+    if(k==='diary'){const m=state.diary.find(x=>x.id===id);$('#diaryId').value=id;$('#diaryTitle').value=m.title||'';$('#diaryText').value=m.text;$('#diaryDate').value=m.date||today();$('#diaryFormTitle').textContent='일기 수정';$('#diaryForm').scrollIntoView({behavior:'smooth'})}
     if(k==='memo'){const m=state.memos.find(x=>x.id===id);$('#memoId').value=id;$('#memoText').value=m.text;$('#memoDate').value=m.date||today();$('#memoFormTitle').textContent='메모 수정';$('#memoForm').scrollIntoView({behavior:'smooth'})}
     return}
   if(b.id==='paperCancel'){selectedPaper=null;renderPapers();return}
+  if(b.id==='wPrev'){weekOffset--;renderSchedule();return}
+  if(b.id==='wNext'){weekOffset++;renderSchedule();return}
+  if(b.id==='wToday'){weekOffset=0;renderSchedule();return}
   if(/Cancel$/.test(b.id)){renderAll()}
 });
+
+document.addEventListener('click',e=>{const g=e.target.closest('[data-gotab]');if(g){e.preventDefault();showTab(g.dataset.gotab)}});
+document.addEventListener('input',e=>{const ta=e.target.closest('[data-sched]');if(!ta||!owner)return;state.schedule[ta.dataset.sched]=ta.value;
+  clearTimeout(schedTimer);const m=$('#schedMsg');if(m)m.textContent='저장 대기…';
+  schedTimer=setTimeout(async()=>{try{const r=await apiPost({a:'patch',pw,set:{schedule:state.schedule}});if(m)m.textContent=r.ok?'저장됐어요 ♡':'저장 실패: '+(r.error||'')}catch(err){if(m)m.textContent='저장 실패'}},1200)});
 
 /* ---------- 인트로 (사진 → 종이비행기) ---------- */
 function runIntro(){
@@ -284,20 +354,20 @@ function runIntro(){
   const end=()=>{o.classList.add('out');setTimeout(()=>o.remove(),700);try{sessionStorage.setItem('introSeen','1')}catch(e){}};
   o.addEventListener('click',end);
   const img=$('#introPhoto');
-  const go=()=>{o.classList.add('play');setTimeout(end,4300)};
+  const go=()=>{o.classList.add('play');setTimeout(end,5900)};
   if(img.complete)go();else{img.onload=go;img.onerror=()=>{img.remove();o.classList.add('nophoto');go()}}
 }
 runIntro();
 
 /* ---------- 시작 ---------- */
 (async()=>{
-  let initial='topics';
-  try{const h=location.hash.replace('#','');if(TABS.includes(h))initial=h;else{const s=localStorage.getItem('tab');if(s&&TABS.includes(s))initial=s}}catch(e){}
+  let initial='home';
+  try{const h=location.hash.replace('#','');if(TABS.includes(h))initial=h}catch(e){}
   try{const r=await apiGet('all');if(r.ok){state=r.state||{};guest=r.guest||[]}}catch(e){$('#loadMsg').textContent='데이터를 불러오지 못했어요. 새로고침해 주세요.'}
   normalize();
   $('#loadMsg').remove();
   renderAll();showTab(initial);
-  try{const saved=localStorage.getItem('pw');if(saved){const r=await apiPost({a:'check',pw:saved});if(r.ok&&r.auth){pw=saved;owner=true;renderAll();
+  try{const saved=localStorage.getItem('pw');if(saved){const r=await apiPost({a:'check',pw:saved});if(r.ok&&r.auth){pw=saved;owner=true;await loadFull();renderAll();showTab(currentTab);
     if(!['topics','papers','memos','hot','contests','jobs'].some(k=>state[k].length)&&window.SEED)await seedIfEmpty()}}}catch(e){}
 })();
 })();
