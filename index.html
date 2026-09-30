@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>이지현 논문일지 방명록</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Gaegu:wght@400;700&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+:root{
+  --bg:#fff7f9; --paper:#ffffff; --fg:#4a3f47; --muted:#9a8a93; --line:#f3d9e2;
+  --pink:#ff9fbf; --pink-soft:#ffe3ec; --mint:#9fe0d3; --mint-soft:#e2f7f2; --lemon:#fff1a8; --danger:#e07a7a;
+  --display:"Jua","Gaegu","Apple SD Gothic Neo",sans-serif; --hand:"Gaegu","Apple SD Gothic Neo",cursive; --sans:"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#241d22; --paper:#2f262c; --fg:#f4e9ee; --muted:#b8a5af; --line:#4a3b44;
+  --pink-soft:#4a2f3b; --mint:#7fd2c2; --mint-soft:#27423d; --lemon:#5a5230; --danger:#ff9a9a; color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:15px;line-height:1.7;
+  background-image:radial-gradient(var(--line) 1px,transparent 1px);background-size:22px 22px}
+.wrap{max-width:680px;margin:0 auto;padding:28px 20px 70px}
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:22px}
+.mascot{width:60px;height:60px;flex:none}
+h1{font-family:var(--display);font-weight:400;font-size:30px;margin:0;line-height:1.2}
+h1 span{color:var(--pink)}
+header p{margin:0;color:var(--muted);font-family:var(--hand);font-size:17px}
+.back{font-size:13px;color:var(--pink);text-decoration:none;margin-left:auto}
+form{display:grid;gap:8px;background:var(--paper);border:2px solid var(--line);border-radius:18px;padding:16px;margin-bottom:22px;position:relative}
+form::before{content:"";position:absolute;top:-9px;left:22px;width:54px;height:16px;background:var(--lemon);opacity:.9;transform:rotate(-3deg);border-radius:2px}
+form h2{font-family:var(--display);font-weight:400;font-size:19px;margin:0;color:var(--pink)}
+input,textarea{font:inherit;padding:9px 12px;border:2px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);width:100%}
+textarea{min-height:90px;resize:vertical}
+input:focus-visible,textarea:focus-visible,button:focus-visible{outline:3px solid var(--mint);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{background:var(--pink);color:#fff;border:0;border-radius:999px;padding:9px 20px;font:inherit;font-weight:700;cursor:pointer;box-shadow:0 3px 0 rgba(0,0,0,.08)}
+.btn:disabled{opacity:.5;cursor:default}
+.msg{font-size:13px;color:var(--muted)}
+.msg.err{color:var(--danger)}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+.count{font-family:var(--display);font-size:18px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.count::before{content:"";width:12px;height:12px;border-radius:50%;background:var(--mint)}
+.g{padding:12px 14px;border:2px solid var(--line);border-radius:16px;background:var(--paper);margin-bottom:10px}
+.g b{font-family:var(--hand);font-weight:700;font-size:18px}
+.g .d{color:var(--muted);font-size:12.5px;margin-left:6px;font-variant-numeric:tabular-nums}
+.g p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.empty{color:var(--muted);padding:28px 16px;border:2px dashed var(--line);text-align:center;border-radius:18px;background:var(--paper);font-family:var(--hand);font-size:18px}
+footer{margin-top:30px;text-align:center;color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <svg class="mascot" viewBox="0 0 64 64" aria-hidden="true">
+    <ellipse cx="32" cy="38" rx="22" ry="20" fill="#ffd6e3"/>
+    <circle cx="16" cy="22" r="7" fill="#ffd6e3"/><circle cx="48" cy="22" r="7" fill="#ffd6e3"/>
+    <circle cx="16" cy="22" r="3.5" fill="#ff9fbf"/><circle cx="48" cy="22" r="3.5" fill="#ff9fbf"/>
+    <circle cx="24" cy="38" r="2.3" fill="#4a3f47"/><circle cx="40" cy="38" r="2.3" fill="#4a3f47"/>
+    <path d="M28 44 q4 3 8 0" stroke="#4a3f47" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    <circle cx="19" cy="43" r="3" fill="#ff9fbf" opacity=".6"/><circle cx="45" cy="43" r="3" fill="#ff9fbf" opacity=".6"/>
+    <rect x="22" y="50" width="20" height="9" rx="2" fill="#9fe0d3"/><rect x="24" y="52" width="16" height="1.5" fill="#fff"/><rect x="24" y="55" width="11" height="1.5" fill="#fff"/>
+  </svg>
+  <div>
+    <h1>이지현 논문일지 <span>방명록</span></h1>
+    <p>다녀간 흔적을 남겨 주세요 ♡</p>
+  </div>
+  <a class="back" href="https://claude.ai/artifact/DM3287G3HMd4iECfDVaBv7" id="backLink">← 논문일지로</a>
+</header>
+
+<form id="f" autocomplete="off">
+  <h2>방명록 남기기</h2>
+  <div class="row"><input id="nick" placeholder="닉네임" maxlength="30" required style="flex:0 1 200px"></div>
+  <textarea id="text" placeholder="한마디 남겨 주세요" maxlength="1000" required></textarea>
+  <input class="hp" id="hp" name="website" tabindex="-1" autocomplete="off">
+  <div class="row"><button class="btn" id="send" type="submit">남기기</button><span class="msg" id="msg"></span></div>
+</form>
+
+<p class="count" id="count">방명록</p>
+<div id="list"><div class="empty">불러오는 중…</div></div>
+<footer>이지현 논문일지 · 방명록</footer>
+</div>
+
+<script>
+// ▼ Apps Script 웹 앱 배포 URL(…/exec)을 여기에 넣으세요.
+const API_URL = 'https://script.google.com/macros/s/AKfycbwbSIjz3pB-OvUSbUzebq9IfrJyyL4Ih5UoEqsKhYnx_37nGUJ6pVPRJc0nioCsasJjnQ/exec';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = d => { const t = new Date(d); return isNaN(t) ? '' : t.toLocaleDateString('ko-KR', {year:'numeric', month:'2-digit', day:'2-digit'}).replace(/\s/g,'').replace(/\.$/,''); };
+
+async function load() {
+  if (API_URL.startsWith('APPS_')) { $('#list').innerHTML = '<div class="empty">아직 백엔드 주소가 연결되지 않았어요.</div>'; return; }
+  try {
+    const r = await fetch(API_URL + '?t=' + Date.now(), { cache: 'no-store' });
+    const j = await r.json();
+    render(j.items || []);
+  } catch (e) {
+    $('#list').innerHTML = '<div class="empty">목록을 불러오지 못했어요. 잠시 후 새로고침해 주세요.</div>';
+  }
+}
+function render(items) {
+  $('#count').textContent = `방명록 ${items.length}개`;
+  $('#list').innerHTML = items.length
+    ? items.map(g => `<div class="g"><b>${esc(g.nick)}</b><span class="d">${esc(fmt(g.date))}</span><p>${esc(g.text)}</p></div>`).join('')
+    : '<div class="empty">첫 방명록을 기다리고 있어요.</div>';
+}
+$('#f').addEventListener('submit', async e => {
+  e.preventDefault();
+  const nick = $('#nick').value.trim(), text = $('#text').value.trim(), hp = $('#hp').value;
+  const btn = $('#send'), msg = $('#msg');
+  if (!nick || !text) return;
+  btn.disabled = true; msg.className = 'msg'; msg.textContent = '남기는 중…';
+  try {
+    // text/plain으로 보내야 CORS 사전요청 없이 Apps Script에 도달합니다.
+    const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ nick, text, hp }), headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '실패');
+    $('#text').value = '';
+    msg.textContent = '고마워요! 남겨졌어요 ♡';
+    try { localStorage.setItem('nick', nick); } catch (_) {}
+    await load();
+  } catch (err) {
+    msg.className = 'msg err'; msg.textContent = '저장에 실패했어요: ' + err.message;
+  } finally { btn.disabled = false; }
+});
+try { const n = localStorage.getItem('nick'); if (n) $('#nick').value = n; } catch (_) {}
+if ($('#backLink').getAttribute('href').startsWith('JOURNAL_')) $('#backLink').hidden = true;
+load();
+</script>
+</body>
+</html>
