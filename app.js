@@ -6,7 +6,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const today=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const PUBLIC_TABS=['cv','papers','hot','contests','jobs','guest','diary'];
-const PRIVATE_TABS=['schedule','topics','memos'];
+const PRIVATE_TABS=['schedule','readings','topics','memos'];
 const TABS=[...PUBLIC_TABS,...PRIVATE_TABS];
 const DOW=['일','월','화','수','목','금','토'];
 let state={}, guest=[], owner=false, pw='', selectedPaper=null, guestTimer=null, dirty=false, editingGuest=null;
@@ -15,7 +15,8 @@ let myTokens={};try{myTokens=JSON.parse(localStorage.getItem('gtokens')||'{}')}c
 function saveTokens(){try{localStorage.setItem('gtokens',JSON.stringify(myTokens))}catch(e){}}
 
 function normalize(){
-  ['topics','papers','memos','hot','contests','jobs','diary'].forEach(k=>{if(!Array.isArray(state[k]))state[k]=[]});
+  ['topics','papers','memos','hot','contests','jobs','diary','readings'].forEach(k=>{if(!Array.isArray(state[k]))state[k]=[]});
+  state.readings.forEach(r=>{if(!Array.isArray(r.comments))r.comments=[];if(typeof r.stars!=='number')r.stars=0});
   if(!state.schedule||typeof state.schedule!=='object')state.schedule={};
   state.topics.forEach(t=>{if(!Array.isArray(t.feedback))t.feedback=[];if(typeof t.stars!=='number')t.stars=0});
   state.hot.forEach(h=>{if(!Array.isArray(h.notes))h.notes=[]});
@@ -186,6 +187,52 @@ function renderGuest(){
     <p class="count meta" id="gCount">방명록 ${tops.length}개 · 실시간</p>${list}`;
   try{const n=localStorage.getItem('nick');if(n&&$('#glNick'))$('#glNick').value=n}catch(e){}
 }
+/* ---------- 읽은 논문 ---------- */
+let editingReading=null, readingFilter='', readingQ='';
+function starsHtml(n,attr){return `<span class="stars">${[1,2,3,4,5].map(i=>`<button type="button" class="${i<=n?'on':''}" ${attr?`data-${attr}="${i}"`:'disabled'} title="${i}점">★</button>`).join('')}</span>`}
+function renderReadings(){
+  const el=$('[data-render="readings"]');if(!owner){el.innerHTML='';return}
+  const fields=[...new Set(state.readings.map(r=>r.field).filter(Boolean))];
+  const Q=readingQ.toLowerCase();const hit=r=>!Q||[r.cite,r.field,r.summary,...r.comments.map(c=>c.text)].some(s=>String(s||'').toLowerCase().includes(Q));
+  const items=state.readings.filter(r=>(!readingFilter||r.field===readingFilter)&&hit(r));
+  const list=items.length?items.map(r=>`
+    <article class="card rd" id="r-${r.id}">
+      <div class="topic-head"><span>${r.field?`<span class="pill mint">${esc(r.field)}</span>`:''} <span class="meta">읽은 날 ${esc(r.date||r.created||'')}</span></span>${starsHtml(r.stars,'rstar:'+r.id)}</div>
+      <p class="cite" style="margin:6px 0 8px"><b>${esc(r.cite)}</b></p>
+      ${r.summary?`<div class="abs rdsum">${esc(r.summary)}</div>`:''}
+      <div class="row" style="margin-top:8px">${r.pdf?`<a class="btn ghost sm" href="${esc(r.pdf)}" target="_blank" rel="noopener">📄 PDF 열기</a>`:''}${r.link?`<a class="btn ghost sm" href="${esc(r.link)}" target="_blank" rel="noopener">↗ 원문 링크</a>`:''}</div>
+      <div class="fb"><h4>댓글 ${r.comments.length?`<span class="meta">${r.comments.length}개</span>`:''}</h4>
+        ${r.comments.map(cm=>`<div class="fb-item"><p>${esc(cm.text)}</p><span class="meta">${esc(cm.date)}</span><button class="btn ghost sm danger" data-delrc="${r.id}:${cm.id}">삭제</button></div>`).join('')}
+        <form class="fb-form" data-rcform="${r.id}"><textarea placeholder="댓글·추가 메모…" required></textarea><div class="row"><button class="btn sm" type="submit">달기</button></div></form>
+      </div>
+      <div class="tools"><button class="btn ghost sm" data-edit="reading:${r.id}">수정</button><button class="btn ghost sm danger" data-del="reading:${r.id}">삭제</button></div>
+    </article>`).join(''):`<div class="empty">읽은 논문을 정리해 두는 곳이에요 📚</div>`;
+  const e=editingReading?state.readings.find(x=>x.id===editingReading):null;
+  el.innerHTML=`<h2>읽은 논문</h2>
+    <div class="gform" style="margin-bottom:16px"><h4 style="margin:0;font-family:var(--display);font-weight:400;color:var(--pink)">논문 바로 검색 🔎</h4>
+      <form id="libForm" class="row"><input id="libQ" class="grow" placeholder="제목·저자·키워드" required><button class="btn" type="submit">고려대 도서관</button><button class="btn ghost" type="button" data-libgo="scholar">Google Scholar</button><button class="btn ghost" type="button" data-libgo="riss">RISS</button><button class="btn ghost" type="button" data-libgo="dbpia">DBpia</button></form>
+      <p class="meta" style="margin:0">학교 네트워크에 있으면 도서관 검색 결과에서 원문까지 바로 열려요.</p></div>
+    <form class="row" id="rdSearch" style="margin-bottom:10px" onsubmit="return false"><span class="meta">🔍</span><input id="rdQ" class="grow" placeholder="내가 정리한 논문 찾기 (출처·분야·정리·댓글)" value="${esc(readingQ)}">${readingQ?`<button class="btn ghost sm" type="button" id="rdQClear">지우기</button><span class="meta">${items.length}건</span>`:''}</form>
+    ${fields.length?`<div class="row" style="margin-bottom:10px"><span class="meta">분야</span><button class="btn ghost sm ${!readingFilter?'on':''}" data-rfilter="">전체 ${state.readings.length}</button>${fields.map(f=>`<button class="btn ghost sm ${readingFilter===f?'on':''}" data-rfilter="${esc(f)}">${esc(f)} ${state.readings.filter(r=>r.field===f).length}</button>`).join('')}</div>`:''}
+    ${items.length||!state.readings.length?list:`<div class="empty">"${esc(readingQ)}" — 찾은 게 없어요.</div>`}
+    <div class="owner"><h4 id="readingFormTitle">${e?'논문 정리 수정':'읽은 논문 추가'}</h4>
+    <form id="readingForm"><input type="hidden" id="rdId" value="${e?esc(e.id):''}">
+      <textarea id="rdCite" placeholder="출처 (저자, 연도, 제목, 학술지, 권(호), 쪽)" required>${e?esc(e.cite):''}</textarea>
+      <div class="row"><input id="rdField" class="grow" list="fieldList" placeholder="분야 (예: 노동시장, 지방소멸)" value="${e?esc(e.field||''):''}"><datalist id="fieldList">${fields.map(f=>`<option value="${esc(f)}">`).join('')}</datalist>
+        <label class="meta">별점</label><select id="rdStars" style="width:auto">${[0,1,2,3,4,5].map(n=>`<option value="${n}" ${e&&e.stars===n?'selected':''}>${n?'★'.repeat(n):'없음'}</option>`).join('')}</select>
+        <label class="meta" for="rdDate">읽은 날</label><input type="date" id="rdDate" value="${e?esc(e.date||''):today()}" style="width:auto"></div>
+      <textarea id="rdSummary" style="min-height:160px" placeholder="논문 정리 — 연구질문, 데이터, 방법, 결과, 내 연구와의 연결…">${e?esc(e.summary||''):''}</textarea>
+      <div class="row"><input id="rdLink" class="grow" placeholder="원문 링크 (선택)" value="${e?esc(e.link||''):''}"></div>
+      <div class="row"><label class="meta">PDF</label><input type="file" id="rdPdf" accept="application/pdf" style="width:auto">${e&&e.pdf?`<span class="meta">현재: <a href="${esc(e.pdf)}" target="_blank" rel="noopener">첨부됨</a> · 새 파일을 고르면 교체돼요</span>`:''}</div>
+      <div class="row"><button class="btn" type="submit">${e?'수정 저장':'추가'}</button>${e?`<button class="btn ghost" type="button" id="readingCancel">취소</button>`:''}<span class="meta" id="rdMsg"></span></div>
+    </form></div>`;
+}
+function libUrl(kind,q){q=encodeURIComponent(q);return kind==='scholar'?`https://scholar.google.com/scholar?q=${q}`:kind==='riss'?`https://www.riss.kr/search/Search.do?queryText=&query=${q}&searchGubun=true&colName=all`:kind==='dbpia'?`https://www.dbpia.co.kr/search/topSearch?searchOption=all&query=${q}`:`https://library.korea.ac.kr/main-search-result/?q=${q}`}
+async function uploadPdf(file){
+  const b64=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(String(fr.result).split(',')[1]);fr.onerror=rej;fr.readAsDataURL(file)});
+  const r=await apiPost({a:'upload',pw,name:file.name,mime:file.type||'application/pdf',data:b64});
+  if(!r.ok)throw new Error(r.error||'업로드 실패');return r.url;
+}
 /* ---------- 일기장 ---------- */
 function renderHome(){
   const el=$('#home');
@@ -230,7 +277,7 @@ function renderSchedule(){
     <div class="week">${days.slice(0,5).map(d=>cell(d,false)).join('')}<div class="weekend">${cell(days[5],true)}${cell(days[6],true)}</div></div>
     <p class="meta" id="schedMsg" style="margin-top:8px">칸에 쓰면 자동으로 저장돼요.</p>`;
 }
-function renderAll(){renderDday();renderTabs();renderCV();renderPapers();renderHot();renderContests();renderJobs();renderGuest();renderDiary();renderSchedule();renderTopics();renderMemos();renderOwnerBar();if(currentTab==='home')renderHome()}
+function renderAll(){renderDday();renderTabs();renderCV();renderPapers();renderHot();renderContests();renderJobs();renderGuest();renderDiary();renderSchedule();renderReadings();renderTopics();renderMemos();renderOwnerBar();if(currentTab==='home')renderHome()}
 
 /* ---------- 주인 모드 ---------- */
 function renderOwnerBar(){
@@ -257,7 +304,7 @@ async function seedIfEmpty(){
   status(r.ok?'초기 데이터 저장 완료!':'초기 데이터 저장 실패: '+r.error);renderAll();return r.ok;
 }
 async function loadFull(){try{const r=await apiPost({a:'full',pw});if(r.ok&&r.state){state=r.state;normalize()}}catch(e){}}
-function logout(){owner=false;pw='';try{localStorage.removeItem('pw')}catch(e){}['topics','memos'].forEach(k=>state[k]=[]);state.schedule={};if(PRIVATE_TABS.includes(currentTab))currentTab='home';renderAll();showTab(currentTab)}
+function logout(){owner=false;pw='';try{localStorage.removeItem('pw')}catch(e){}['topics','memos','readings'].forEach(k=>state[k]=[]);state.schedule={};if(PRIVATE_TABS.includes(currentTab))currentTab='home';renderAll();showTab(currentTab)}
 
 function status(msg){let s=$('#status');if(!s){s=document.createElement('div');s.id='status';document.body.appendChild(s)}s.textContent=msg;clearTimeout(status.t);status.t=setTimeout(()=>{s.remove()},4000)}
 async function save(){
@@ -304,6 +351,12 @@ document.addEventListener('submit',async e=>{
     const i=state.papers.findIndex(x=>x.id===id);if(i>=0)state.papers[i]=p;else state.papers.unshift(p);selectedPaper=null}
   if(f.id==='memoForm'){const id=$('#memoId').value;const i=state.memos.findIndex(x=>x.id===id);const date=$('#memoDate').value||today();
     if(i>=0){state.memos[i].text=$('#memoText').value.trim();state.memos[i].date=date}else state.memos.unshift({id:uid(),text:$('#memoText').value.trim(),date})}
+  if(f.id==='libForm'){window.open(libUrl('ku',$('#libQ').value.trim()),'_blank','noopener');return}
+  if(f.dataset.rcform){const r=state.readings.find(x=>x.id===f.dataset.rcform);r.comments.push({id:uid(),text:f.querySelector('textarea').value.trim(),date:today()});return save()}
+  if(f.id==='readingForm'){const id=$('#rdId').value;const msg=$('#rdMsg');const file=$('#rdPdf').files[0];let pdf=id?(state.readings.find(x=>x.id===id)||{}).pdf:'';
+    if(file){msg.textContent='PDF 올리는 중…';try{pdf=await uploadPdf(file)}catch(err){msg.textContent='PDF 업로드 실패: '+err.message;return}}
+    const rec={cite:$('#rdCite').value.trim(),field:$('#rdField').value.trim(),stars:+$('#rdStars').value,date:$('#rdDate').value||today(),summary:$('#rdSummary').value.trim(),link:$('#rdLink').value.trim(),pdf:pdf||''};
+    const i=state.readings.findIndex(x=>x.id===id);if(i>=0)Object.assign(state.readings[i],rec);else state.readings.unshift({id:uid(),comments:[],created:today(),...rec});editingReading=null;await save();return}
   if(f.id==='diaryForm'){const id=$('#diaryId').value;const rec={title:$('#diaryTitle').value.trim(),text:$('#diaryText').value.trim(),date:$('#diaryDate').value||today()};
     const i=state.diary.findIndex(x=>x.id===id);if(i>=0)Object.assign(state.diary[i],rec);else state.diary.unshift({id:uid(),...rec});
     state.diary.sort((x,y)=>(y.date||'').localeCompare(x.date||''))}
@@ -317,6 +370,8 @@ document.addEventListener('click',async e=>{
   if(b.id==='login')return login();
   if(b.id==='pwCancel'){$('#pwForm').hidden=true;return}
   if(b.id==='logout')return logout();
+  if(b.id==='rdQClear'){readingQ='';renderReadings();return}
+  if(b.dataset.libgo){const q=$('#libQ').value.trim();if(q)window.open(libUrl(b.dataset.libgo,q),'_blank','noopener');return}
   if(b.dataset.greply){replyTo=(replyTo===b.dataset.greply)?null:b.dataset.greply;renderGuest();const ta=document.querySelector('[data-rtext]');if(ta)ta.focus();return}
   if(b.dataset.grcancel){replyTo=null;renderGuest();return}
   if(b.dataset.gedit){editingGuest=b.dataset.gedit;renderGuest();return}
@@ -331,16 +386,21 @@ document.addEventListener('click',async e=>{
   if(d.fbcancel){const f=document.querySelector(`[data-fbform="${d.fbcancel}"]`);f.hidden=true;document.querySelector(`[data-addfb="${d.fbcancel}"]`).hidden=false;return}
   if(d.delfb){const [tid,fid]=d.delfb.split(':');if(!d.armed){d.armed='1';b.textContent='정말?';return}
     const t=state.topics.find(x=>x.id===tid);t.feedback=t.feedback.filter(x=>x.id!==fid);return save()}
+  if(d.rfilter!==undefined){readingFilter=d.rfilter;renderReadings();return}
+  if(b.id==='readingCancel'){editingReading=null;renderReadings();return}
+  if(d.delrc){const [rid,cid]=d.delrc.split(':');const r=state.readings.find(x=>x.id===rid);r.comments=r.comments.filter(c=>c.id!==cid);return save()}
+  for(const k in d){if(k.startsWith('rstar:')){const rid=k.slice(6);const r=state.readings.find(x=>x.id===rid);const n=+d[k];r.stars=(r.stars===n)?0:n;return save()}}
   if(d.star){const [tid,n]=d.star.split(':');const t=state.topics.find(x=>x.id===tid);t.stars=(t.stars===+n)?0:+n;return save()}
   if(d.delhotnote){const [i,j]=d.delhotnote.split(':');state.hot[+i].notes.splice(+j,1);return save()}
   if(d.delcontest){if(!d.armed){d.armed='1';b.textContent='정말?';return}state.contests.splice(+d.delcontest,1);return save()}
   if(d.delhot){if(!d.armed){d.armed='1';b.textContent='정말?';return}state.hot.splice(+d.delhot,1);return save()}
   if(d.deljob){if(!d.armed){d.armed='1';b.textContent='정말?';return}state.jobs.splice(+d.deljob,1);return save()}
   if(d.del){const [k,id]=d.del.split(':');
-    if(d.armed){const key={topic:'topics',paper:'papers',memo:'memos',diary:'diary'}[k];state[key]=state[key].filter(x=>x.id!==id);selectedPaper=null;save()}
+    if(d.armed){const key={topic:'topics',paper:'papers',memo:'memos',diary:'diary',reading:'readings'}[k];state[key]=state[key].filter(x=>x.id!==id);selectedPaper=null;save()}
     else{d.armed='1';b.textContent='정말 삭제?'}return}
   if(d.edit){const [k,id]=d.edit.split(':');
     if(k==='topic'){const t=state.topics.find(x=>x.id===id);$('#topicId').value=id;$('#topicTopic').value=t.topic;$('#topicData').value=t.data;$('#topicVars').value=t.vars;$('#topicFormTitle').textContent='논문주제 수정';$('#topicForm').scrollIntoView({behavior:'smooth'})}
+    if(k==='reading'){editingReading=id;renderReadings();$('#readingForm').scrollIntoView({behavior:'smooth',block:'center'});return}
     if(k==='diary'){const m=state.diary.find(x=>x.id===id);$('#diaryId').value=id;$('#diaryTitle').value=m.title||'';$('#diaryText').value=m.text;$('#diaryDate').value=m.date||today();$('#diaryFormTitle').textContent='일기 수정';$('#diaryForm').scrollIntoView({behavior:'smooth'})}
     if(k==='memo'){const m=state.memos.find(x=>x.id===id);$('#memoId').value=id;$('#memoText').value=m.text;$('#memoDate').value=m.date||today();$('#memoFormTitle').textContent='메모 수정';$('#memoForm').scrollIntoView({behavior:'smooth'})}
     return}
@@ -351,7 +411,9 @@ document.addEventListener('click',async e=>{
   if(/Cancel$/.test(b.id)){renderAll()}
 });
 
-document.addEventListener('click',e=>{const g=e.target.closest('[data-gotab]');if(g){e.preventDefault();showTab(g.dataset.gotab)}});
+document.addEventListener('click',e=>{const g=e.target.closest('[data-gotab]');if(g){e.preventDefault();showTab(g.dataset.gotab)}
+});
+document.addEventListener('input',e=>{if(e.target.id==='rdQ'){clearTimeout(renderReadings.t);renderReadings.t=setTimeout(()=>{readingQ=e.target.value.trim();const pos=e.target.selectionStart;renderReadings();const i=$('#rdQ');if(i){i.focus();i.setSelectionRange(pos,pos)}},250)}});
 document.addEventListener('input',e=>{const ta=e.target.closest('[data-sched]');if(!ta||!owner)return;state.schedule[ta.dataset.sched]=ta.value;
   clearTimeout(schedTimer);const m=$('#schedMsg');if(m)m.textContent='저장 대기…';
   schedTimer=setTimeout(async()=>{try{const r=await apiPost({a:'patch',pw,set:{schedule:state.schedule}});if(m)m.textContent=r.ok?'저장됐어요 ♡':'저장 실패: '+(r.error||'')}catch(err){if(m)m.textContent='저장 실패'}},1200)});
